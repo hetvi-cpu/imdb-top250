@@ -1,126 +1,120 @@
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 import pandas as pd
-import matplotlib.pyplot as plt
+import time
+import json
 import os
 
 
-# ── Paths ─────────────────────────────────────────────────────────────────────
-BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR    = os.path.join(BASE_DIR, '..', 'data')
-CHARTS_DIR  = os.path.join(BASE_DIR, '..', 'charts')
+# ── Constants ─────────────────────────────────────────────────────────────────
+URL         = "https://www.imdb.com/chart/top/"
+MAX_RETRIES = 3
+CSS_ROW     = 'li.ipc-metadata-list-summary-item'
+CSS_TITLE   = 'h3.ipc-title__text'
+CSS_META    = 'li.ipc-inline-list__item'
+CSS_RATING  = 'span.ipc-rating-star--imdb'
+
+DATA_DIR    = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data')
 
 
-# ── Loader ────────────────────────────────────────────────────────────────────
-def load_data(path=None):
-    """Load and type-cast the scraped CSV."""
-    if path is None:
-        path = os.path.join(DATA_DIR, 'imdb_top250.csv')
-    df = pd.read_csv(path)
-    df['year']        = df['year'].astype('Int64')
+# ── Browser setup ─────────────────────────────────────────────────────────────
+def get_driver():
+    return webdriver.Chrome()
+
+# ── Page loader with retry ────────────────────────────────────────────────────
+def load_page(driver):
+    """Load IMDb Top 250 page, retrying up to MAX_RETRIES times."""
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            driver.get(URL)
+            WebDriverWait(driver, 15).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, CSS_ROW))
+            )
+            time.sleep(2)  # extra buffer for full JS render
+            print(f"  Page loaded on attempt {attempt}")
+            return True
+        except Exception as e:
+            print(f"  Attempt {attempt} failed: {e}")
+            time.sleep(3)
+
+    print("  Could not load IMDb after 3 attempts.")
+    return False
+
+
+# ── Row parser ────────────────────────────────────────────────────────────────
+def parse_row(row, idx):
+    """Extract movie data from a single list-item row. Returns dict or None."""
+    try:
+        raw_title = row.find_element(By.CSS_SELECTOR, CSS_TITLE).text
+        title     = raw_title.split('. ', 1)[-1].strip()
+
+        metadata = row.find_elements(By.CSS_SELECTOR, CSS_META)
+        year     = metadata[0].text if len(metadata) > 0 else 'N/A'
+        duration = metadata[1].text if len(metadata) > 1 else 'N/A'
+
+        rating_el = row.find_elements(By.CSS_SELECTOR, CSS_RATING)
+        rating    = rating_el[0].text.split()[0] if rating_el else 'N/A'
+
+        return {
+            'rank':        idx,
+            'title':       title,
+            'year':        year,
+            'duration':    duration,
+            'imdb_rating': rating
+        }
+    except Exception as e:
+        print(f"  Row {idx} parse error: {e} — skipping")
+        return None
+
+
+# ── Data cleaner ──────────────────────────────────────────────────────────────
+def clean_dataframe(movies):
+    """Convert raw list of dicts into a clean, typed DataFrame."""
+    df = pd.DataFrame(movies)
+    df['year']        = pd.to_numeric(df['year'], errors='coerce').astype('Int64')
     df['imdb_rating'] = pd.to_numeric(df['imdb_rating'], errors='coerce')
+    df.drop_duplicates(subset=['title', 'year'], inplace=True)
+    df.sort_values('rank', inplace=True)
+    df.reset_index(drop=True, inplace=True)
     return df
 
 
-# ── Individual chart functions ────────────────────────────────────────────────
-def plot_rating_distribution(df):
-    """Histogram of IMDb rating spread across all 250 movies."""
-    plt.figure(figsize=(10, 6))
-    plt.hist(df['imdb_rating'].dropna(), bins=20, edgecolor='black', color='steelblue')
-    plt.title('Distribution of IMDb Ratings — Top 250 Movies')
-    plt.xlabel('IMDb Rating')
-    plt.ylabel('Number of Movies')
-    plt.tight_layout()
-    plt.savefig(os.path.join(CHARTS_DIR, 'rating_distribution.png'), dpi=150)
-    plt.close()
-    print("  Saved: charts/rating_distribution.png")
+# ── Exporter ──────────────────────────────────────────────────────────────────
+def export_data(df, movies):
+    """Save DataFrame to CSV + Excel and raw list to JSON."""
+    os.makedirs(DATA_DIR, exist_ok=True)
+    df.to_csv(os.path.join(DATA_DIR, 'imdb_top250.csv'), index=False)
+    df.to_excel(os.path.join(DATA_DIR, 'imdb_top250.xlsx'), index=False)
+    with open(os.path.join(DATA_DIR, 'imdb_top250.json'), 'w') as f:
+        json.dump(movies, f, indent=2)
+    print(f"  Exported {len(df)} movies → data/imdb_top250.csv / .xlsx / .json")
 
 
-def plot_top10(df):
-    """Horizontal bar chart of top 10 movies by rating."""
-    top = df.sort_values('imdb_rating', ascending=False).head(10)
-    plt.figure(figsize=(12, 7))
-    bars = plt.barh(top['title'], top['imdb_rating'], color='steelblue')
-    plt.xlabel('IMDb Rating')
-    plt.title('Top 10 Movies by IMDb Rating')
-    plt.gca().invert_yaxis()
-    for bar, val in zip(bars, top['imdb_rating']):
-        plt.text(
-            bar.get_width() - 0.05,
-            bar.get_y() + bar.get_height() / 2,
-            f'{val}', va='center', ha='right',
-            color='white', fontweight='bold'
-        )
-    plt.tight_layout()
-    plt.savefig(os.path.join(CHARTS_DIR, 'top_10_movies.png'), dpi=150)
-    plt.close()
-    print("  Saved: charts/top_10_movies.png")
+# ── Main scrape function ──────────────────────────────────────────────────────
+def scrape():
+    """Full scrape pipeline. Returns cleaned DataFrame."""
+    driver = get_driver()
 
+    if not load_page(driver):
+        driver.quit()
+        raise RuntimeError("Failed to load IMDb page after retries.")
 
-def plot_rating_vs_year(df):
-    """Scatter plot — does release year correlate with rating?"""
-    plt.figure(figsize=(10, 6))
-    plt.scatter(
-        df['year'], df['imdb_rating'],
-        alpha=0.6, color='steelblue',
-        edgecolors='white', linewidth=0.5
-    )
-    plt.title('IMDb Rating vs Release Year')
-    plt.xlabel('Year')
-    plt.ylabel('IMDb Rating')
-    plt.tight_layout()
-    plt.savefig(os.path.join(CHARTS_DIR, 'rating_vs_year.png'), dpi=150)
-    plt.close()
-    print("  Saved: charts/rating_vs_year.png")
+    rows   = driver.find_elements(By.CSS_SELECTOR, CSS_ROW)
+    print(f"  Found {len(rows)} movie rows")
 
+    movies = [parse_row(row, idx) for idx, row in enumerate(rows, start=1)]
+    movies = [m for m in movies if m is not None]  # drop failed rows
+    driver.quit()
+    print(f"  Scraped {len(movies)} movies successfully")
 
-def plot_avg_rating_by_decade(df):
-    """Line chart — average rating grouped by decade."""
-    df = df.copy()
-    df['decade']  = (df['year'] // 10) * 10
-    decade_avg    = df.groupby('decade')['imdb_rating'].mean().reset_index()
-    plt.figure(figsize=(10, 6))
-    plt.plot(
-        decade_avg['decade'], decade_avg['imdb_rating'],
-        marker='o', color='steelblue', linewidth=2
-    )
-    plt.fill_between(decade_avg['decade'], decade_avg['imdb_rating'],
-                     alpha=0.1, color='steelblue')
-    plt.title('Average IMDb Rating by Decade')
-    plt.xlabel('Decade')
-    plt.ylabel('Average IMDb Rating')
-    plt.xticks(
-        decade_avg['decade'],
-        [f"{int(d)}s" for d in decade_avg['decade']],
-        rotation=45
-    )
-    plt.tight_layout()
-    plt.savefig(os.path.join(CHARTS_DIR, 'avg_rating_by_decade.png'), dpi=150)
-    plt.close()
-    print("  Saved: charts/avg_rating_by_decade.png")
-
-
-# ── Stats printer ─────────────────────────────────────────────────────────────
-def print_stats(df):
-    """Print basic dataset statistics to console."""
-    print("  Basic Statistics:")
-    print(df.describe().to_string())
-    print(f"\n  Total movies  : {len(df)}")
-    print(f"  Rating range  : {df['imdb_rating'].min()} – {df['imdb_rating'].max()}")
-    print(f"  Year range    : {df['year'].min()} – {df['year'].max()}")
-
-
-# ── Main analysis function ────────────────────────────────────────────────────
-def analyze(path=None):
-    """Run all analysis steps on the scraped CSV."""
-    os.makedirs(CHARTS_DIR, exist_ok=True)
-    df = load_data(path)
-    print_stats(df)
-    plot_rating_distribution(df)
-    plot_top10(df)
-    plot_rating_vs_year(df)
-    plot_avg_rating_by_decade(df)
-    print("\n  All charts saved successfully.")
+    df = clean_dataframe(movies)
+    export_data(df, movies)
+    return df
 
 
 # ── Allow direct run ──────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    analyze()
+    scrape()

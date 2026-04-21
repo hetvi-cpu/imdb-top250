@@ -1,10 +1,19 @@
 import pandas as pd
 import matplotlib.pyplot as plt
+import os
+
+
+# ── Paths ─────────────────────────────────────────────────────────────────────
+BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR    = os.path.join(BASE_DIR, '..', 'data')
+CHARTS_DIR  = os.path.join(BASE_DIR, '..', 'charts')
 
 
 # ── Loader ────────────────────────────────────────────────────────────────────
-def load_data(path='imdb_top250.csv'):
+def load_data(path=None):
     """Load and type-cast the scraped CSV."""
+    if path is None:
+        path = os.path.join(DATA_DIR, 'imdb_top250.csv')
     df = pd.read_csv(path)
     df['year']        = df['year'].astype('Int64')
     df['imdb_rating'] = pd.to_numeric(df['imdb_rating'], errors='coerce')
@@ -20,9 +29,9 @@ def plot_rating_distribution(df):
     plt.xlabel('IMDb Rating')
     plt.ylabel('Number of Movies')
     plt.tight_layout()
-    plt.savefig('rating_distribution.png', dpi=150)
+    plt.savefig(os.path.join(CHARTS_DIR, 'rating_distribution.png'), dpi=150)
     plt.close()
-    print("  Saved: rating_distribution.png")
+    print("  Saved: charts/rating_distribution.png")
 
 
 def plot_top10(df):
@@ -41,9 +50,9 @@ def plot_top10(df):
             color='white', fontweight='bold'
         )
     plt.tight_layout()
-    plt.savefig('top_10_movies.png', dpi=150)
+    plt.savefig(os.path.join(CHARTS_DIR, 'top_10_movies.png'), dpi=150)
     plt.close()
-    print("  Saved: top_10_movies.png")
+    print("  Saved: charts/top_10_movies.png")
 
 
 def plot_rating_vs_year(df):
@@ -58,9 +67,9 @@ def plot_rating_vs_year(df):
     plt.xlabel('Year')
     plt.ylabel('IMDb Rating')
     plt.tight_layout()
-    plt.savefig('rating_vs_year.png', dpi=150)
+    plt.savefig(os.path.join(CHARTS_DIR, 'rating_vs_year.png'), dpi=150)
     plt.close()
-    print("  Saved: rating_vs_year.png")
+    print("  Saved: charts/rating_vs_year.png")
 
 
 def plot_avg_rating_by_decade(df):
@@ -84,9 +93,9 @@ def plot_avg_rating_by_decade(df):
         rotation=45
     )
     plt.tight_layout()
-    plt.savefig('avg_rating_by_decade.png', dpi=150)
+    plt.savefig(os.path.join(CHARTS_DIR, 'avg_rating_by_decade.png'), dpi=150)
     plt.close()
-    print("  Saved: avg_rating_by_decade.png")
+    print("  Saved: charts/avg_rating_by_decade.png")
 
 
 # ── Stats printer ─────────────────────────────────────────────────────────────
@@ -100,8 +109,9 @@ def print_stats(df):
 
 
 # ── Main analysis function ────────────────────────────────────────────────────
-def analyze(path='imdb_top250.csv'):
+def analyze(path=None):
     """Run all analysis steps on the scraped CSV."""
+    os.makedirs(CHARTS_DIR, exist_ok=True)
     df = load_data(path)
     print_stats(df)
     plot_rating_distribution(df)
