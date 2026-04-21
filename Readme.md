@@ -7,16 +7,24 @@ A Python project that scrapes the [IMDb Top 250 Movies](https://www.imdb.com/cha
 ## Project Structure
 
 ```
-├── Main.py               # Entry point — runs the full pipeline
-├── Scrape.py             # Selenium-based web scraper
-├── Analysis.py           # Data analysis & chart generation
-├── imdb_top250.csv       # Scraped data (CSV)
-├── imdb_top250.xlsx      # Scraped data (Excel)
-├── imdb_top250.json      # Scraped data (JSON)
-├── rating_distribution.png
-├── top_10_movies.png
-├── rating_vs_year.png
-└── avg_rating_by_decade.png
+├── src/
+│   ├── Main.py               # Entry point — runs the full pipeline
+│   ├── Scrape.py             # Selenium-based web scraper
+│   └── Analysis.py           # Data analysis & chart generation
+│
+├── data/
+│   ├── imdb_top250.csv       # Scraped data (CSV)
+│   ├── imdb_top250.xlsx      # Scraped data (Excel)
+│   └── imdb_top250.json      # Scraped data (JSON)
+│
+├── charts/
+│   ├── rating_distribution.png
+│   ├── top_10_movies.png
+│   ├── rating_vs_year.png
+│   └── avg_rating_by_decade.png
+│
+├── .gitignore
+└── README.md
 ```
 
 ---
@@ -63,13 +71,13 @@ pip install selenium pandas matplotlib openpyxl
 
 ### 3. Run the pipeline
 ```bash
-python Main.py
+python src/Main.py
 ```
 
 This will:
 1. Scrape the IMDb Top 250 page
-2. Export data to `imdb_top250.csv`, `.xlsx`, and `.json`
-3. Generate all four charts as `.png` files
+2. Export data to `data/imdb_top250.csv`, `.xlsx`, and `.json`
+3. Generate all four charts inside the `charts/` folder
 
 ---
 
